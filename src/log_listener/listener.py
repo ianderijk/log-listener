@@ -8,7 +8,7 @@ import threading
 import time
 from typing import Any, cast
 
-from pilake import lake_utils
+from pilake import lake_utils as lh
 
 LISTENING_HOST = "0.0.0.0"
 
@@ -44,13 +44,14 @@ class LogBufferManager:
         timestamp = int(time.time())
 
         for project, log_list in grouped.items():
-            formatted_lines = [formatter.format(rec) for rec in log_list]
+            formatted_lines = [formatter.format(record) for record in log_list]
             payload = ("\n".join(formatted_lines) + "\n").encode("utf-8")
 
-            filename = f"log_{timestamp}_{len(log_list)}_records"
+            filename = f"log_{timestamp}_records"
 
             try:
-                lake_utils.send_to_bucket(
+                print("sending logs to bucket...")
+                lh.send_to_bucket(
                     bucket_name="logs",
                     partition_name=project,
                     bytes_=payload,
@@ -122,7 +123,6 @@ class LogRecordSocketReceiver(socketserver.ThreadingTCPServer):
         handler=LogRecordStreamHandler,
     ):
         super().__init__((host, port), cast(Any, handler))
-        self.timeout = 1
 
     def serve_until_stopped(self):
         try:
@@ -133,21 +133,18 @@ class LogRecordSocketReceiver(socketserver.ThreadingTCPServer):
 
 def main():
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+        level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s"
     )
 
     buffer_manager.start()
     tcpserver = LogRecordSocketReceiver()
 
-    print("Starting TCP Log Server...")
     try:
+        print("Starting log listener")
         tcpserver.serve_until_stopped()
     finally:
-        print("Shutting down TCP server...")
         tcpserver.server_close()
-        print("Flushing remaining logs...")
         buffer_manager.stop()
-        print("Shutdown complete.")
 
 
 if __name__ == "__main__":
